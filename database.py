@@ -22,7 +22,6 @@ def init_db():
             model TEXT,
             color TEXT,
             series TEXT,
-            code TEXT,
             note TEXT,
             side_image TEXT,
             bottom_image TEXT,
@@ -32,13 +31,13 @@ def init_db():
     conn.commit()
     conn.close()
 
-def add_car(brand, model, color, series, code, note, side_image, bottom_image):
+def add_car(brand, model, color, series, note, side_image, bottom_image):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO cars (brand, model, color, series, code, note, side_image, bottom_image)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (brand, model, color, series, code, note, side_image, bottom_image))
+        INSERT INTO cars (brand, model, color, series, note, side_image, bottom_image)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (brand, model, color, series, note, side_image, bottom_image))
     conn.commit()
     conn.close()
 
