@@ -73,18 +73,18 @@ with tab1:
             st.session_state.bottom_image_path = bottom_path
             st.image(bottom_path, caption="底盘图", use_container_width=True)
     
-    # 自动识别底盘信息
-    if st.session_state.bottom_image_path and auto_recognize:
+    # 自动识别
+    if st.session_state.side_image_path and st.session_state.bottom_image_path and auto_recognize:
         st.divider()
-        if st.button("🔍 识别底盘信息", type="primary"):
+        if st.button("🔍 自动识别信息", type="primary"):
             if not api_key:
                 st.error("请先输入智谱API Key")
             else:
                 with st.spinner("识别中..."):
                     try:
-                        result = ai.recognize_bottom(st.session_state.bottom_image_path, api_key)
+                        result = ai.recognize_both(st.session_state.side_image_path, st.session_state.bottom_image_path, api_key)
                         st.session_state.recognition_result = result
-                        st.success("识别完成！")
+                        st.success(f"识别完成！车型：{result.get('model', '')}，颜色：{result.get('color', '')}")
                     except Exception as e:
                         st.error(f"识别失败：{str(e)}")
     
@@ -101,7 +101,7 @@ with tab1:
             model = st.text_input("车型名称 *", value=default_data.get('model', ''), placeholder="如：Ford F150 Lightning")
         
         with col2:
-            color = st.text_input("颜色 *", value="", placeholder="如：深蓝色")
+            color = st.text_input("颜色 *", value=default_data.get('color', ''), placeholder="如：深蓝色")
             series = st.text_input("系列（可选）", value=default_data.get('series', ''), placeholder="如：Super Truck")
         
         note = st.text_input("备注（可选）", value="", placeholder="其他信息")
