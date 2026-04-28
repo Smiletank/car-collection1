@@ -58,8 +58,13 @@ def search_cars(brand=None, model=None):
         query += " AND brand LIKE ?"
         params.append(f"%{brand}%")
     if model:
-        query += " AND model LIKE ?"
-        params.append(f"%{model}%")
+        # 更宽松的匹配：只要包含关键词就算
+        # 把车型名称拆成关键词，每个关键词都匹配
+        keywords = model.replace('-', ' ').replace('_', ' ').split()
+        for kw in keywords:
+            if len(kw) > 2:  # 忽略太短的关键词
+                query += f" AND (model LIKE ? OR ? LIKE '%' || model || '%')"
+                params.extend([f"%{kw}%", kw])
     cursor.execute(query, params)
     rows = cursor.fetchall()
     conn.close()

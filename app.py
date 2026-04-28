@@ -85,8 +85,39 @@ with tab1:
                         result = ai.recognize_both(st.session_state.side_image_path, st.session_state.bottom_image_path, api_key)
                         st.session_state.recognition_result = result
                         st.success(f"识别完成！车型：{result.get('model', '')}，颜色：{result.get('color', '')}")
+                        
+                        # 自动查重
+                        if result.get('model'):
+                            similar = db.search_cars(model=result['model'])
+                            if similar:
+                                st.session_state.duplicate_warning = similar
+                            else:
+                                st.session_state.duplicate_warning = None
                     except Exception as e:
                         st.error(f"识别失败：{str(e)}")
+    
+    # 显示重复警告
+    if 'duplicate_warning' not in st.session_state:
+        st.session_state.duplicate_warning = None
+    
+    if st.session_state.duplicate_warning:
+        st.warning(f"⚠️ ⚠️ ⚠️ 检测到重复！数据库中已有 {len(st.session_state.duplicate_warning)} 辆相同车型！")
+        st.write("请对比确认是否要继续入库：")
+        
+        # 并排显示所有重复车辆的侧视图
+        cols = st.columns(min(len(st.session_state.duplicate_warning), 4))
+        for i, s in enumerate(st.session_state.duplicate_warning):
+            cid, brand, model, color, series, note, side_img, bottom_img, created_at = s[:9]
+            with cols[i % 4]:
+                st.write(f"**{model}**")
+                st.write(f"颜色：{color}")
+                if side_img and os.path.exists(side_img):
+                    st.image(side_img, width=150)
+                else:
+                    st.info("无图片")
+                st.caption(f"入库：{created_at[:10]}")
+        
+        st.divider()
     
     # 手动输入/编辑信息
     if st.session_state.side_image_path and st.session_state.bottom_image_path:
@@ -118,6 +149,7 @@ with tab1:
                     st.session_state.recognition_result = None
                     st.session_state.side_image_path = None
                     st.session_state.bottom_image_path = None
+                    st.session_state.duplicate_warning = None
                     st.rerun()
         
         with col2:
