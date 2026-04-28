@@ -4,19 +4,15 @@ from datetime import datetime
 
 # Streamlit Cloud 用 /tmp 目录，本地用 data 目录
 if os.path.exists('/mount/src'):
-    # 在 Streamlit Cloud 环境
     DB_PATH = "/tmp/cars.db"
     IMAGE_DIR = "/tmp/images"
 else:
-    # 本地环境
     DB_PATH = "data/cars.db"
     IMAGE_DIR = "data/images"
 
-# 确保图片目录存在
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
 def init_db():
-    """初始化数据库"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
@@ -28,36 +24,25 @@ def init_db():
             series TEXT,
             code TEXT,
             note TEXT,
-            image_path TEXT,
+            side_image TEXT,
+            bottom_image TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
-    # 检查并添加缺失的列（兼容旧数据库）
-    cursor.execute("PRAGMA table_info(cars)")
-    columns = [col[1] for col in cursor.fetchall()]
-    
-    if 'series' not in columns:
-        cursor.execute('ALTER TABLE cars ADD COLUMN series TEXT')
-    if 'code' not in columns:
-        cursor.execute('ALTER TABLE cars ADD COLUMN code TEXT')
-    
     conn.commit()
     conn.close()
 
-def add_car(brand, model, color, series, code, note, image_path):
-    """添加一辆车到数据库"""
+def add_car(brand, model, color, series, code, note, side_image, bottom_image):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO cars (brand, model, color, series, code, note, image_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (brand, model, color, series, code, note, image_path))
+        INSERT INTO cars (brand, model, color, series, code, note, side_image, bottom_image)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (brand, model, color, series, code, note, side_image, bottom_image))
     conn.commit()
     conn.close()
 
 def get_all_cars():
-    """获取所有收藏"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM cars ORDER BY created_at DESC')
@@ -66,32 +51,26 @@ def get_all_cars():
     return rows
 
 def search_cars(brand=None, model=None):
-    """搜索相似车型"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
     query = "SELECT * FROM cars WHERE 1=1"
     params = []
-    
     if brand:
         query += " AND brand LIKE ?"
         params.append(f"%{brand}%")
     if model:
         query += " AND model LIKE ?"
         params.append(f"%{model}%")
-    
     cursor.execute(query, params)
     rows = cursor.fetchall()
     conn.close()
     return rows
 
 def delete_car(car_id):
-    """删除一辆车"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('DELETE FROM cars WHERE id = ?', (car_id,))
     conn.commit()
     conn.close()
 
-# 初始化数据库
 init_db()
