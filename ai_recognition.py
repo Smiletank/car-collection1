@@ -7,6 +7,36 @@ def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
+def parse_json(text):
+    """更健壮的JSON解析"""
+    # 尝试直接解析
+    try:
+        return json.loads(text)
+    except:
+        pass
+    
+    # 尝试提取JSON块
+    json_match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
+    if json_match:
+        try:
+            return json.loads(json_match.group())
+        except:
+            pass
+    
+    # 尝试修复常见问题
+    text = text.replace("'", '"')  # 单引号改双引号
+    text = re.sub(r',\s*}', '}', text)  # 移除多余的逗号
+    text = re.sub(r',\s*]', ']', text)
+    
+    json_match = re.search(r'\{.*\}', text, re.DOTALL)
+    if json_match:
+        try:
+            return json.loads(json_match.group())
+        except:
+            pass
+    
+    return {}
+
 def recognize_bottom(image_path, api_key):
     """
     识别底盘图片，提取车辆信息
@@ -16,17 +46,12 @@ def recognize_bottom(image_path, api_key):
     image_base64 = encode_image(image_path)
     
     prompt = """
-你是风火轮/火柴盒玩具车收藏专家。请仔细识别这张底盘图片中的所有文字信息。
-
-请提取：
-- brand: 品牌（风火轮/Hot Wheels、火柴盒/Matchbox、TLV、多美卡/Tomica等）
-- model: 具体车型名称（如：Ford F150 Lightning、Nissan Skyline R32等）
-- series: 系列名称（如：Super Truck、Mainline、Car Culture等）
-
-请以JSON格式返回：
+请识别这张玩具车底盘图片中的文字信息，返回JSON格式：
 {"brand": "品牌", "model": "车型名称", "series": "系列"}
 
-如果某个字段无法识别，请返回空字符串。
+品牌填：风火轮、火柴盒、TLV、多美卡等
+车型名称：底盘上的具体车名
+系列：如果有写系列名称就填，没有就留空
 """
 
     response = client.chat.completions.create(
@@ -43,11 +68,13 @@ def recognize_bottom(image_path, api_key):
     )
     
     result_text = response.choices[0].message.content
-    json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+    result = parse_json(result_text)
     
-    if json_match:
-        return json.loads(json_match.group())
-    return {"brand": "", "model": "", "series": ""}
+    return {
+        "brand": result.get("brand", ""),
+        "model": result.get("model", ""),
+        "series": result.get("series", "")
+    }
 
 
 def recognize_side(image_path, api_key):
@@ -59,13 +86,12 @@ def recognize_side(image_path, api_key):
     image_base64 = encode_image(image_path)
     
     prompt = """
-你是一个玩具车收藏专家。请识别这张玩具车侧视图图片，告诉我这辆车的主要颜色。
+请看这张玩具车侧视图图片，告诉我这辆车的主要颜色。
 
-只需要返回一个颜色描述，比如：深蓝色、红色、金色、黑黄配色等。
-如果车身有多种颜色，用"配色"描述，如：黑白配色、蓝红配色。
-
-请以JSON格式返回：
+直接返回JSON格式：
 {"color": "颜色描述"}
+
+颜色用简洁的中文描述，比如：深蓝色、红色、金色、黑黄配色等。
 """
 
     response = client.chat.completions.create(
@@ -82,11 +108,9 @@ def recognize_side(image_path, api_key):
     )
     
     result_text = response.choices[0].message.content
-    json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+    result = parse_json(result_text)
     
-    if json_match:
-        return json.loads(json_match.group())
-    return {"color": ""}
+    return {"color": result.get("color", "")}
 
 
 def recognize_both(side_path, bottom_path, api_key):
@@ -113,14 +137,7 @@ def recognize_cars(image_path, api_key):
     image_base64 = encode_image(image_path)
     
     prompt = """
-你是1:64合金小车收藏专家。请识别图片中的所有小车模型。
-
-对于每辆车，请识别：
-- brand: 品牌（风火轮、火柴盒、TLV、多美卡、其他）
-- model: 车型名称（尽量具体）
-- color: 颜色
-
-返回JSON数组：
+请识别图片中的所有玩具车，返回JSON数组：
 [{"brand": "品牌", "model": "车型", "color": "颜色"}]
 """
 
@@ -138,8 +155,13 @@ def recognize_cars(image_path, api_key):
     )
     
     result_text = response.choices[0].message.content
-    json_match = re.search(r'\[.*\]', result_text, re.DOTALL)
     
+    # 尝试解析数组
+    json_match = re.search(r'\[.*\]', result_text, re.DOTALL)
     if json_match:
-        return json.loads(json_match.group())
+        try:
+            return json.loads(json_match.group())
+        except:
+            pass
+    
     return []
