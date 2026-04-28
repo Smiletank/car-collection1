@@ -2,3 +2,7 @@ streamlit
 zhipuai
 Pillow
 pandas
+sniffio
+anyio
+httpcore
+httpx
