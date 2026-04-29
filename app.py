@@ -38,6 +38,7 @@ def get_supabase_client():
         except Exception as e:
             st.error(f"数据库连接失败: {str(e)}")
             return None
+    # init_supabase返回None是正常的（改用requests直连），不阻断流程
     return st.session_state.supabase_client
 
 
@@ -332,9 +333,6 @@ def main():
     
     # 初始化Supabase客户端
     supabase = get_supabase_client()
-    if supabase is None:
-        st.error("无法连接到数据库，请检查配置")
-        return
     
     # 主内容区 - Tabs
     tab1, tab2, tab3 = st.tabs([
