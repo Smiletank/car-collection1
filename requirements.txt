@@ -6,3 +6,4 @@ sniffio
 anyio
 httpcore
 httpx
+libsql-client
