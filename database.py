@@ -1,19 +1,25 @@
-import sqlite3
 import os
 from datetime import datetime
+from libsql_experimental import connect
 
-# Streamlit Cloud 用 /tmp 目录，本地用 data 目录
+# Turso 云数据库配置
+DB_URL = "libsql://car-collection-smiletank.aws-ap-northeast-1.turso.io"
+DB_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzc0NzQzNDYsImlkIjoiMDE5ZGQ5YTktZjgwMS03ZDA3LTk0OGUtMDVmOTJjOTQwMTBkIiwicmlkIjoiZTEyMDczNjUtNGRkNC00YjRhLWFkNDktOGMwODZlMzlhMDEzIn0.uvQqqnxpUL1CL_bZiBLGfH5Jw3SQi9z-N0d7BUpEZ7Xc1SthWoEuWGKsMsfY_x7LrYFnszGqvGnFErPIzEqDCw"
+
+# 图片存储目录
 if os.path.exists('/mount/src'):
-    DB_PATH = "/tmp/cars.db"
     IMAGE_DIR = "/tmp/images"
 else:
-    DB_PATH = "data/cars.db"
     IMAGE_DIR = "data/images"
-
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
+def get_conn():
+    """获取数据库连接"""
+    return connect(DB_URL, auth_token=DB_TOKEN)
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    """初始化数据库"""
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS cars (
@@ -32,7 +38,8 @@ def init_db():
     conn.close()
 
 def add_car(brand, model, color, series, note, side_image, bottom_image):
-    conn = sqlite3.connect(DB_PATH)
+    """添加一辆车到数据库"""
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO cars (brand, model, color, series, note, side_image, bottom_image)
@@ -42,15 +49,17 @@ def add_car(brand, model, color, series, note, side_image, bottom_image):
     conn.close()
 
 def get_all_cars():
-    conn = sqlite3.connect(DB_PATH)
+    """获取所有收藏"""
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM cars ORDER BY created_at DESC')
     rows = cursor.fetchall()
     conn.close()
-    return rows
+    return [list(row) for row in rows]
 
 def search_cars(brand=None, model=None):
-    conn = sqlite3.connect(DB_PATH)
+    """搜索相似车型"""
+    conn = get_conn()
     cursor = conn.cursor()
     query = "SELECT * FROM cars WHERE 1=1"
     params = []
@@ -58,20 +67,19 @@ def search_cars(brand=None, model=None):
         query += " AND brand LIKE ?"
         params.append(f"%{brand}%")
     if model:
-        # 更宽松的匹配：只要包含关键词就算
-        # 把车型名称拆成关键词，每个关键词都匹配
         keywords = model.replace('-', ' ').replace('_', ' ').split()
         for kw in keywords:
-            if len(kw) > 2:  # 忽略太短的关键词
+            if len(kw) > 2:
                 query += f" AND (model LIKE ? OR ? LIKE '%' || model || '%')"
                 params.extend([f"%{kw}%", kw])
     cursor.execute(query, params)
     rows = cursor.fetchall()
     conn.close()
-    return rows
+    return [list(row) for row in rows]
 
 def delete_car(car_id):
-    conn = sqlite3.connect(DB_PATH)
+    """删除一辆车"""
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute('DELETE FROM cars WHERE id = ?', (car_id,))
     conn.commit()
