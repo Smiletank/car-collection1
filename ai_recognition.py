@@ -1,167 +1,234 @@
-import base64
-from zhipuai import ZhipuAI
+"""
+AI图像识别模块
+使用智谱GLM-4V-flash识别车辆信息
+"""
+
 import json
+import base64
 import re
+import requests
 
-def encode_image(image_path):
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode('utf-8')
 
-def parse_json(text):
-    """更健壮的JSON解析"""
+ZHIPU_API_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+
+
+def encode_image_to_base64(image_bytes: bytes) -> str:
+    """将图片字节转换为base64字符串"""
+    return base64.b64encode(image_bytes).decode("utf-8")
+
+
+def extract_json_from_response(text: str) -> dict:
+    """
+    健壮地从AI响应中提取JSON
+    处理各种格式不规范的情况
+    """
+    text = text.strip()
+    
     # 尝试直接解析
     try:
         return json.loads(text)
-    except:
+    except json.JSONDecodeError:
         pass
     
-    # 尝试提取JSON块
-    json_match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
-    if json_match:
+    # 尝试从代码块中提取
+    code_block_patterns = [
+        r'```json\s*([\s\S]*?)\s*```',
+        r'```\s*([\s\S]*?)\s*```',
+    ]
+    
+    for pattern in code_block_patterns:
+        match = re.search(pattern, text)
+        if match:
+            try:
+                return json.loads(match.group(1).strip())
+            except json.JSONDecodeError:
+                continue
+    
+    # 尝试找到JSON对象的开始和结束
+    start_idx = text.find('{')
+    end_idx = text.rfind('}')
+    
+    if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+        json_str = text[start_idx:end_idx + 1]
         try:
-            return json.loads(json_match.group())
-        except:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
             pass
     
     # 尝试修复常见问题
-    text = text.replace("'", '"')  # 单引号改双引号
-    text = re.sub(r',\s*}', '}', text)  # 移除多余的逗号
-    text = re.sub(r',\s*]', ']', text)
+    # 1. 移除尾部的逗号
+    fixed = re.sub(r',\s*([}\]])', r'\1', text)
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
     
-    json_match = re.search(r'\{.*\}', text, re.DOTALL)
-    if json_match:
-        try:
-            return json.loads(json_match.group())
-        except:
-            pass
+    # 2. 修复单引号为双引号
+    fixed = re.sub(r"'([^']*)':", r'"\1":', text)
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
     
-    return {}
+    raise ValueError(f"无法解析AI响应: {text[:200]}")
 
-def recognize_bottom(image_path, api_key):
+
+def recognize_car_from_bottom(image_bytes: bytes, api_key: str) -> str:
     """
-    识别底盘图片，提取车辆信息
-    返回：{"brand": "", "model": "", "series": ""}
+    从底盘图识别车型名称
+    
+    Args:
+        image_bytes: 底盘图字节数据
+        api_key: 智谱API Key
+    
+    Returns:
+        识别的车型名称
     """
-    client = ZhipuAI(api_key=api_key)
-    image_base64 = encode_image(image_path)
+    base64_image = encode_image_to_base64(image_bytes)
     
-    prompt = """
-请识别这张玩具车底盘图片中的文字信息，返回JSON格式：
-{"brand": "品牌", "model": "车型名称", "series": "系列"}
+    prompt = """你是一个专业的汽车识别专家。请仔细分析这张底盘/底部图片，识别出这辆车的具体车型名称。
 
-品牌填：风火轮、火柴盒、TLV、多美卡等
-车型名称：底盘上的具体车名
-系列：如果有写系列名称就填，没有就留空
-"""
+请只返回JSON格式的识别结果，不要包含任何其他文字：
+```json
+{
+    "car_name": "识别出的车型名称，例如：Ford F-150 Lightning"
+}
+```
 
-    response = client.chat.completions.create(
-        model="glm-4v-flash",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
-                ]
-            }
-        ],
-    )
+注意事项：
+1. 如果无法确定具体车型，请给出最可能的猜测
+2. 车型名称应包含品牌和具体车型
+3. 如果图片质量太差无法识别，返回空的car_name"""
     
-    result_text = response.choices[0].message.content
-    result = parse_json(result_text)
-    
-    return {
-        "brand": result.get("brand", ""),
-        "model": result.get("model", ""),
-        "series": result.get("series", "")
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
     }
-
-
-def recognize_side(image_path, api_key):
-    """
-    识别侧视图图片，提取颜色信息
-    返回：{"color": ""}
-    """
-    client = ZhipuAI(api_key=api_key)
-    image_base64 = encode_image(image_path)
     
-    prompt = """
-请看这张玩具车侧视图图片，告诉我这辆车的主要颜色。
-
-直接返回JSON格式：
-{"color": "颜色描述"}
-
-颜色用简洁的中文描述，比如：深蓝色、红色、金色、黑黄配色等。
-"""
-
-    response = client.chat.completions.create(
-        model="glm-4v-flash",
-        messages=[
+    payload = {
+        "model": "glm-4v-flash",
+        "messages": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
                 ]
             }
         ],
-    )
-    
-    result_text = response.choices[0].message.content
-    result = parse_json(result_text)
-    
-    return {"color": result.get("color", "")}
-
-
-def recognize_both(side_path, bottom_path, api_key):
-    """
-    同时识别侧视图和底盘图，返回完整信息
-    """
-    side_result = recognize_side(side_path, api_key)
-    bottom_result = recognize_bottom(bottom_path, api_key)
-    
-    return {
-        "brand": bottom_result.get("brand", ""),
-        "model": bottom_result.get("model", ""),
-        "series": bottom_result.get("series", ""),
-        "color": side_result.get("color", "")
+        "temperature": 0.1
     }
-
-
-def recognize_cars(image_path, api_key):
-    """
-    识别图片中的小车（用于查重）
-    返回列表
-    """
-    client = ZhipuAI(api_key=api_key)
-    image_base64 = encode_image(image_path)
     
-    prompt = """
-请识别图片中的所有玩具车，返回JSON数组：
-[{"brand": "品牌", "model": "车型", "color": "颜色"}]
-"""
+    try:
+        response = requests.post(
+            ZHIPU_API_ENDPOINT,
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
+        response.raise_for_status()
+        
+        result = response.json()
+        content = result["choices"][0]["message"]["content"]
+        
+        # 解析JSON响应
+        parsed = extract_json_from_response(content)
+        car_name = parsed.get("car_name", "").strip()
+        
+        return car_name if car_name else "未能识别车型"
+    
+    except requests.exceptions.Timeout:
+        raise Exception("AI识别超时，请重试")
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"API请求失败: {str(e)}")
+    except Exception as e:
+        raise Exception(f"车型识别失败: {str(e)}")
 
-    response = client.chat.completions.create(
-        model="glm-4v-flash",
-        messages=[
+
+def recognize_color_from_side(image_bytes: bytes, api_key: str) -> str:
+    """
+    从侧视图识别车辆颜色
+    
+    Args:
+        image_bytes: 侧视图字节数据
+        api_key: 智谱API Key
+    
+    Returns:
+        识别的车辆颜色
+    """
+    base64_image = encode_image_to_base64(image_bytes)
+    
+    prompt = """你是一个专业的汽车颜色识别专家。请仔细分析这张汽车侧视图，识别出这辆车的准确颜色。
+
+请只返回JSON格式的识别结果，不要包含任何其他文字：
+```json
+{
+    "color": "识别出的颜色，例如：火焰红、珍珠白、深空灰、午夜蓝"
+}
+```
+
+注意事项：
+1. 请给出准确的中文颜色描述
+2. 如果是金属漆或珍珠漆，请加上相应描述（如"珍珠白"、"金属灰"）
+3. 如果是双色车身，请以主要颜色为准
+4. 如果无法确定，返回"未知颜色" """
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "glm-4v-flash",
+        "messages": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
                 ]
             }
         ],
-    )
+        "temperature": 0.1
+    }
     
-    result_text = response.choices[0].message.content
+    try:
+        response = requests.post(
+            ZHIPU_API_ENDPOINT,
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
+        response.raise_for_status()
+        
+        result = response.json()
+        content = result["choices"][0]["message"]["content"]
+        
+        # 解析JSON响应
+        parsed = extract_json_from_response(content)
+        color = parsed.get("color", "").strip()
+        
+        return color if color else "未知颜色"
     
-    # 尝试解析数组
-    json_match = re.search(r'\[.*\]', result_text, re.DOTALL)
-    if json_match:
-        try:
-            return json.loads(json_match.group())
-        except:
-            pass
-    
-    return []
+    except requests.exceptions.Timeout:
+        raise Exception("AI识别超时，请重试")
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"API请求失败: {str(e)}")
+    except Exception as e:
+        raise Exception(f"颜色识别失败: {str(e)}")
