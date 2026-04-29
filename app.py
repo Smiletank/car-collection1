@@ -7,7 +7,7 @@ import streamlit as st
 from datetime import datetime
 from database import (
     init_supabase, add_car, get_all_cars, 
-    check_duplicate_by_name, upload_image
+    search_duplicates, upload_image
 )
 from ai_recognition import recognize_car_from_bottom, recognize_color_from_side
 
@@ -152,7 +152,7 @@ def render_add_car_page(supabase):
         duplicates = []
         if car_name and "未能" not in car_name:
             with st.spinner("正在检查重复..."):
-                duplicates = check_duplicate_by_name(supabase, car_name)
+                duplicates = search_duplicates(supabase, car_name)
         
         # 显示重复警告
         if duplicates:
@@ -242,7 +242,7 @@ def render_duplicate_check_page(supabase):
             return
         
         with st.spinner("正在搜索..."):
-            duplicates = check_duplicate_by_name(supabase, search_query)
+            duplicates = search_duplicates(supabase, search_query)
         
         if duplicates:
             st.success(f"找到 {len(duplicates)} 个匹配结果：")
